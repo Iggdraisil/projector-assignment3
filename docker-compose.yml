@@ -1,0 +1,108 @@
+version: "3"
+
+services:
+    influxdb:
+        build: ./influxdb
+        container_name: ${CONTAINER_PREFIX}_influxdb
+        ports:
+            - ${INFLUXDB_PORT}:${INFLUXDB_PORT}
+        volumes:
+            - /var/lib/influxdb:/var/lib/influxdb
+        restart: always
+        env_file:
+            - .env
+        networks:
+            - backend
+            - nginx
+
+    telegraf:
+        build: ./telegraf
+        container_name: ${CONTAINER_PREFIX}_telegraf
+        links:
+            - influxdb
+            - mongodb
+            - nginx
+            - elastic
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+            - /proc:/hostfs/proc
+        privileged: true
+        restart: always
+        env_file:
+            - .env
+        networks: 
+            - nginx
+            - backend
+            
+    grafana:
+        build: ./grafana
+        container_name: grafana
+          #       ports: 
+          #- ${GRAFANA_PORT}:${GRAFANA_PORT}
+        links:
+            - influxdb
+        volumes:
+            - /var/lib/grafana
+            - /var/log/grafana
+            - /var/lib/grafana/plugins
+        restart: always
+        env_file:
+            - .env
+        networks:
+            - nginx
+
+    nginx:
+        build: ./nginx
+        container_name: nginx
+        ports: 
+            - 8080:8080
+            - 8081:8081
+        links:
+            - influxdb
+            - grafana
+        restart: always
+        env_file:
+            - .env
+        networks:
+            - frontend
+            - nginx
+
+    mongodb:
+        image: mongo
+        container_name: mongodb
+        ports: 
+          - 27017:27017
+        restart: always
+        env_file:
+            - .env
+        networks:
+            - backend
+
+    application:
+        build: ./application
+        container_name: application
+        ports: 
+          - 8000:8000
+        restart: always
+        env_file:
+            - .env
+        networks:
+            - backend
+
+    elastic:
+        build: ./elasticsearch
+        container_name: elastic
+        ports: 
+          - 9200:9200
+        restart: always
+        env_file:
+            - .env
+        networks:
+            - backend
+
+networks:
+    backend:
+      internal: true      
+    nginx:
+      internal: true
+    frontend:
