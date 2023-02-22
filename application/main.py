@@ -12,7 +12,7 @@ app = FastAPI()
 def mongo_db_dep() -> AsyncIOMotorDatabase:
     return AsyncIOMotorClient(
         os.environ.get("MONGODB_HOST", "localhost"),
-        os.environ.get("MONGODB_PORT", 27017),
+        int(os.environ.get("MONGODB_PORT", "27017")),
     ).test_database
 
 
