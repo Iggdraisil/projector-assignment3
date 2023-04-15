@@ -1049,7 +1049,7 @@
 #   ##   mongodb://user:auth_key@10.10.3.30:27017,
 #   ##   mongodb://10.10.3.33:18832,
 #   ##   10.0.0.1:10000, etc.
-    servers = ["mongodb:27017"]
+    servers = ["mongodb://mongodb:27017"]
 #   gather_perdb_stats = false
 
 

@@ -1,56 +1,77 @@
 import asyncio
 import os
+import random
 
-from fastapi import FastAPI, Depends
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCollection
+import requests
 from elasticsearch import AsyncElasticsearch
-from pymongo.collection import Collection
+from fastapi import FastAPI, Depends
+from motor.motor_asyncio import (
+    AsyncIOMotorClient,
+    AsyncIOMotorDatabase,
+)
 
+word_site = "https://www.mit.edu/~ecprice/wordlist.10000"
+
+response = requests.get(word_site)
+WORDS = response.content.decode('utf-8').splitlines()
 app = FastAPI()
 
+DOCS_NUM = 100000
 
-def mongo_db_dep() -> AsyncIOMotorDatabase:
+
+async def mongo_db_dep() -> AsyncIOMotorDatabase:
     return AsyncIOMotorClient(
         os.environ.get("MONGODB_HOST", "localhost"),
         int(os.environ.get("MONGODB_PORT", "27017")),
+        maxConnecting=100,
+        maxPoolSize=1000,
     ).test_database
 
 
 async def elastic_dep() -> AsyncElasticsearch:
-    elasticsearch = AsyncElasticsearch(
-        f'http://{os.environ.get("ELASTIC_HOST", "localhost")}:{os.environ.get("ELASTIC_PORT", "9200")}'
+    return AsyncElasticsearch(
+        f'http://{os.environ.get("ELASTIC_HOST", "localhost")}:{os.environ.get("ELASTIC_PORT", "9200")}',
+        connections_per_node=1000,
     )
-    bar = not await elasticsearch.indices.get(index="foo", ignore_unavailable=True)
-    if bar:
-        await elasticsearch.indices.create(index="foo")
-    await elasticsearch.update(index="foo", id="bar", doc={"baz": 1}, upsert={"baz": 1})
-    return elasticsearch
 
 
 @app.get("/test")
 async def say_hello(
-        name: str = 'Pizza',
         mongo: AsyncIOMotorDatabase = Depends(mongo_db_dep),
         elastic: AsyncElasticsearch = Depends(elastic_dep),
 ):
-    result, _ = await asyncio.gather(
-        touch_mongo(mongo, name),
-        touch_elastic(elastic, name)
+    await asyncio.gather(
+        touch_mongo(mongo),
+        touch_elastic(elastic),
     )
-    return result
+    return {}
 
 
-async def touch_elastic(elastic: AsyncElasticsearch, name: str):
-    result = await elastic.get(index="foo", id="bar") or {'baz': 1}
-    result['_source']['baz'] += 1
-    await elastic.update(index="foo", id="bar", doc=result['_source'] | {'name': name})
+async def touch_elastic(elastic: AsyncElasticsearch):
+    await asyncio.gather(
+        # elastic.search(
+        #     index="foo",
+        #     query={"match": {"word": {"query": r.get_random_word()}}},
+        # ),
+        elastic.search(
+            index="foo",
+            query={
+                "match": {"description": {"query": random.choice(WORDS)}}
+            },
+        ),
+
+    )
 
 
-async def touch_mongo(mongo, name):
+async def touch_mongo(mongo):
     collection = mongo.foo_collection
-    result = await collection.find_one({'foo': {'$gt': 0}})
+    id_ = random.randint(0, DOCS_NUM)
+    result = await collection.find_one({f"foo{id_}": {"$gt": 0}})
     if not result:
-        await collection.insert_one({"foo": 1})
+        await collection.insert_one({f"foo{id_}": 1})
     else:
-        await collection.replace_one({'_id': result['_id']}, {'foo': result['foo'] + 1, 'name': name})
+        await collection.replace_one(
+            {"_id": result["_id"]},
+            {f"foo{id_}": result[f"foo{id_}"] + 1, "name": random.choice(WORDS)},
+        )
     return {"message": f"Hello"}
